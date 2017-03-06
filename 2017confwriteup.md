@@ -5,12 +5,12 @@
 ### Abstract
 Amongst the various talks held at the PHP Conference, a significant number of talks focused on the core internals of PHP. The workings of PHP's internal structure are a generally deemed mysterious and dangerous ground owing to the lack of documentation concerning them; so talks like "It's all About the Goto" by Derick Rethams (maintainer of extensions such as VLD, Xdebug, and more) are bound to be insightful.
 
-Retham's conference talk demonstrated that it is possible to view some of the inner workings of PHP using the VLD extension, that all control structures and loops are expressed by various types of jump statements (née GOTO statements) within PHP which could be useful for debugging alongside other tools like XDebug.  Further to this, it beomes possible to see ways of optimising the use of PHP's various constructs and built-ins allowing for faster and cleaner code.
+Retham's conference talk, essentially a primer for the VLD extension, demonstrated how PHP opcodes could be inspected with it, and that all control structures and loops are expressed by various types of jump statements (née GOTO statements). The talk also went on to point out uses of VLD for debugging alongside other tools like XDebug.  Further to this, it becomes possible to see ways of optimising the use of PHP's various constructs and built-ins allowing for faster and cleaner code.
 
 Disclaimer: Neither the talk or this document recommend the use of the `goto` statement itself in PHP!
 
 ### How PHP Runs Code
-The key to understanding the inner workings is to know the way the PHP executable works when executing code. PHP can execute code in different ways depending on the context within which it is being used, this achieved through the use of the SAPI (Server Application Programming Interface) some examples of which are: `cgi (common gateway interface)`: the traditional web server api, `fpm-fcgi (php-fpm)`: the api for using a resident instance of php running within a server context, `cli (command line interface)`: used when executing php on command line, and so on. For the purpose of this write-up let's focus on the `cli` SAPI. The `cli` executes PHP code in the following order:
+One way to understand PHP's inner workings is to know how the PHP executable works when executing code. PHP can execute code in different ways depending on the context within which it is being used, this achieved through the use of the SAPI (Server Application Programming Interface) some examples of which are: `cgi (common gateway interface)`: the traditional web server api, `fpm-fcgi (php-fpm)`: the api for using a resident instance of php running within a server context, `cli (command line interface)`: used when executing php on command line, and so on. For the purpose of this write-up let's focus on the `cli` SAPI. The `cli` executes PHP code in the following order:
 
 1. Load Core PHP executable
 2. MINIT (Initialise compiled modules)
@@ -30,7 +30,6 @@ This php code
 echo "hello, world";
 ```
 could be represented like this:
-
 ```
 T_OPEN_TAG
 T_ECHO "hello, world"
@@ -138,8 +137,10 @@ line     #* E I O op                           fetch          ext  return  opera
 Here we see a jump straight into the conditional section of the loop, where `POST_INC` occurs, with the loop only continuing to the echo when the condition is met (`JMPNZ` back to line 2, the `ECHO`).
 
 #### Code Optimisation
-The efficiency of built in iterator functions vs user-defined ones can thus been shown. Consider these this userland iterator that multiplies each array element value by 2.
+The efficiency of built in iterator functions vs user-defined ones can thus been shown. Consider this userland iterator that multiplies each array element value by 2.
 
+
+##### Foreach loop code
 ```php
 <?php
 $numbers = [1, 3, 5, 8];
@@ -164,7 +165,7 @@ line     #* E I O op                           fetch          ext  return  opera
          9      > RETURN                                                   null
 ```
 
-
+##### Array map code
 ```php
 <?php
 $numbers = [1, 3, 5, 8];
@@ -203,7 +204,7 @@ line     #* E I O op                           fetch          ext  return  opera
          3*     > RETURN                                                   null
 ```
 
-Here note the expected `JMP` type statements in the `foreach` code, essentially the code block will executed in this way for the number elements in the array.  The `array_map` variant achieves the same result but uses lambda function definitions and no bytecode jumps, the jumps instead are carried out within the zend-engine's implementation (so as native processor jumps and so on), but with a larger collection of code including two function definitions.  Programmers are at liberty to choose the solution which best suits them but it is worth noting that performing as few jumps in the bytecode could allow for faster code.
+Here, note the expected `JMP` type statements in the `foreach` code, essentially the code block will executed in this way for the number elements in the array.  The `array_map` variant achieves the same result but uses lambda function definitions and no bytecode jumps, the jumps instead are carried out within the zend-engine's implementation (so as native processor jumps and so on), but with a larger collection of code including two function definitions.  Programmers are at liberty to choose the solution which best suits them but it is worth noting that performing as few jumps in the bytecode could allow for faster code.
 
 ### Conclusion
 
