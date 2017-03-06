@@ -3,12 +3,14 @@
 ### Roderick Timmerman
 
 ### Abstract
-This year I attended the PHP Conference with the objectives of attending talks discussing the PHP language's internal structure, and dev ops.  The PHP's workings of PHP's internal structure are a generally deemed mysterious and dangerous ground owing to the lack of documentation concerning them; so talk's such as this one, by Derick Rethams, are bound to be interesting.
+Amongst the various talks held at the PHP Conference, a significant number of talks focused on the core internals of PHP. The workings of PHP's internal structure are a generally deemed mysterious and dangerous ground owing to the lack of documentation concerning them; so talks like "It's all About the Goto" by Derick Rethams (maintainer of extensions such as VLD, Xdebug, and more) are bound to be insightful.
 
-This conference talk demonstrated that it is possible to view some of the inner workings of PHP using the available VLD extension, that all control structures and loops are expressed by various types of jump statements (neé GOTO statements).  Further to this it thus possible to see ways of optimising the use of various constructs in PHP allowing for faster and cleaner code.
+Retham's conference talk demonstrated that it is possible to view some of the inner workings of PHP using the VLD extension, that all control structures and loops are expressed by various types of jump statements (née GOTO statements) within PHP which could be useful for debugging alongside other tools like XDebug.  Further to this, it beomes possible to see ways of optimising the use of PHP's various constructs and built-ins allowing for faster and cleaner code.
 
-### How PHP Gets to Byte Code
-The key to understanding the inner workings is to know the way the PHP executable works when executing code. PHP can execute code in different depending on the context within which it is being used, this achieved through the use of the SAPI (Server Application Programming Interface) some examples of which are: `cgi (common gateway interface)`, `fpm-fcgi (php-fpm)`, `cli (command line interface)`, and so on. For the purpose of this writeup let's focus on the `cli` SAPI. The `cli` executes PHP code in the following order:
+Disclaimer: Neither the talk or this document recommend the use of the `goto` statement itself in PHP!
+
+### How PHP Runs Code
+The key to understanding the inner workings is to know the way the PHP executable works when executing code. PHP can execute code in different ways depending on the context within which it is being used, this achieved through the use of the SAPI (Server Application Programming Interface) some examples of which are: `cgi (common gateway interface)`: the traditional web server api, `fpm-fcgi (php-fpm)`: the api for using a resident instance of php running within a server context, `cli (command line interface)`: used when executing php on command line, and so on. For the purpose of this write-up let's focus on the `cli` SAPI. The `cli` executes PHP code in the following order:
 
 1. Load Core PHP executable
 2. MINIT (Initialise compiled modules)
@@ -19,7 +21,8 @@ The key to understanding the inner workings is to know the way the PHP executabl
 7. MSHUTDOWN (module shudwon)
 9. exit
 
-Step 5, where the php code is run can be shown in terms of the token's php will actually use to process the code:
+#### Tokenisation
+Step 5, where the php code is run can be shown in terms of the Tokens:
 
 This php code
 ```php
@@ -33,9 +36,9 @@ T_OPEN_TAG
 T_ECHO "hello, world"
 ```
 
-All of the tokens php has available to it are found within `zend_language_scanner`. Once tokenised, the script is parsed by the `zend_language_parser` into a state machine which then exectued: an instance of Zend AST (Abstract Syntax Tree). The abstract tree is then converted into byte code.
+All of the tokens php has available to it are found within `zend_language_scanner`. Once tokenised, the script is parsed by the `zend_language_parser` into a state machine which is then exectued: an instance of Zend AST (Abstract Syntax Tree). This abstract tree is then converted into byte code before being executed by the PHP core.
 
-### Examining the Byte Code
+### PHP Bytecode Primer
 Tools such as the VLD (Vulcan Logic Disassembler) allow programmers to examine the actual byte code of php application.  The tool itself can be installed directly from PEAR or compiled from github.  Install from PECL:
 
 ```bash
@@ -64,8 +67,22 @@ branch: #  0; line:     2-    3; sop:     0; eop:     2; out1:  -2
 path #1: 0, 
 Hello, world
 ```
+The table displayed in the output contains the following columns:
 
-With this tool available to us, lets examine the output of an if structure:
+| Column   | description                                                                                    |
+|----------|:-----------------------------------------------------------------------------------------------|
+|`line`    | The actual PHP code line number being executed (this will not compensate for comments in code) |
+| `#*`     | Opcode number                                                                                  |
+| `E`      | Marks entry (e.g. into a function)                                                             |
+| `I`      | [Function] Input?                                                                              |
+| `O`      | [Function] Output?                                                                             |
+| `op`     | Opcode name                                                                                    |
+| `fetch`  | Unknown, left blank                                                                            |
+| `ext`    | Unknown, left blank                                                                            |
+| `return` | States where the opcode returns its output                                                     |
+
+### PHP Bytecode Structures
+With this tool lets examine the output of an if structure:
 
 ```php
 <?php
@@ -93,10 +110,10 @@ line     #* E I O op                           fetch          ext  return  opera
 
 ```
 
-Now the byte code looks more akin to what might be in seen in assembly code. The value for $a is provided between lines 1 and 4 where the built function readline assigns the data to variable $1.
-Line 5: `ASSIGN` allocates $1 to parameter !0.  Line 6 is the start of if statement with the comparator on line 7 `IS_EQUAL`.  The `IS_EQUAL` call will return a non-zero if the condition is met thus the JMPZ (the first "goto" shown) will cause the runtime to go to line 11 `RETURN` if the condition fails otherwise printing the statement "Correct!".
+Now the byte codelooks even more akin to what might be in seen in a processor's assembly code. The value for `$a` is provided between lines 1 and 4 where the built function readline assigns the data to variable $1.
+Line 5: `ASSIGN` allocates `$1` to parameter `!0`.  Line 6 marks the beginning of the if statement block with the comparator on line 7 `IS_EQUAL`.  The `IS_EQUAL` call will return a non-zero if the condition is met (i.e. evaluates to `true`) thus the JMPZ (the first "goto" shown) will cause the runtime to go to line 11 `RETURN` if the condition fails otherwise printing the statement "Correct!".
 
-The same thing can be done to shown how statements like `if...else`, `elseif`, `case`, and even `try...catch` statements work in a similar way by using other variants of `JMP`. Loops are similar in nature, apart from the where the `JMP` statments redirect their code here is a while loop:
+The same thing can be done to shown how statements like `if...else`, `elseif`, `case`, and even `try...catch` statements work in a similar way by using other variants of `JMP`. Loops are similar in nature, apart from the where the `JMP` statments redirect their code here is a while loop (selection statements like if prohibit JMPs that loop, but loops permit this):
 
 ```php
 <?php
@@ -120,7 +137,8 @@ line     #* E I O op                           fetch          ext  return  opera
 
 Here we see a jump straight into the conditional section of the loop, where `POST_INC` occurs, with the loop only continuing to the echo when the condition is met (`JMPNZ` back to line 2, the `ECHO`).
 
-Thus the efficiency of built in iterator functions vs user-defined ones can thus been shown. Consider these this userland iterator that multiplies each array element value by 2.
+#### Code Optimisation
+The efficiency of built in iterator functions vs user-defined ones can thus been shown. Consider these this userland iterator that multiplies each array element value by 2.
 
 ```php
 <?php
@@ -185,8 +203,12 @@ line     #* E I O op                           fetch          ext  return  opera
          3*     > RETURN                                                   null
 ```
 
-Here note the expected `JMP` type statements in the `foreach` code, essentially the code block will executed in this way for the number elements in the array.  The `array_map` variant achieves the same result but uses lambda function definitions and no bytecode jumps, the jumps instead are carried out within the zend-engine's implementation (so as native processor jumps and so on), but with a larger collection of code including two function definitions.  Programmers are at liberty to choose the solution which best suites them but perform as few jumps in the bytecode could allow for faster code.
+Here note the expected `JMP` type statements in the `foreach` code, essentially the code block will executed in this way for the number elements in the array.  The `array_map` variant achieves the same result but uses lambda function definitions and no bytecode jumps, the jumps instead are carried out within the zend-engine's implementation (so as native processor jumps and so on), but with a larger collection of code including two function definitions.  Programmers are at liberty to choose the solution which best suits them but it is worth noting that performing as few jumps in the bytecode could allow for faster code.
 
 ### Conclusion
 
-By examining the bytecode using tools like the VLD extension generated by various PHP functions ways of making code faster can be seen. Carrying out such analysis could also aid in which new features would benefit legacy code the most.  Other types analysis such as dead code analysis which just as important, since PHP doesn't optimise code because of it's nature as an intepreter, should be used in conjuction with this technique.  The VLD extension, together with the the Zend AST allow programmers to start to unravel the inner workings of PHP.
+By examining the bytecode using tools like the VLD extension generated by various PHP functions ways of making code faster can be seen. Carrying out such analysis could also match other uses such as testing which new features would benefit legacy code the most when migrating and debugging troublesome code.
+
+It is also worth considering other types code analysis when using this technique.  Dead code analysis (as seen Xdebug) can be useful since PHP doesn't optimise code because of it's nature as an intepreted language.
+
+The VLD extension, together with the the Zend AST allow programmers to begin start to unravel the inner workings of the way PHP runs code.
